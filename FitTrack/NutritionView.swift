@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct NutritionView: View {
     @Environment(FoodStore.self) var foodStore
@@ -171,6 +172,9 @@ struct MealSectionView: View {
 }
 
 #Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: FoodEntry.self, configurations: config)
     NutritionView()
-        .environment(FoodStore())
+        .modelContainer(container)
+        .environment(FoodStore(modelContext: container.mainContext))
 }

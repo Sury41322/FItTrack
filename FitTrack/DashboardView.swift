@@ -1,82 +1,3 @@
-//import SwiftUI
-//
-//struct DashboardView: View {
-//    var body: some View {
-//        NavigationStack {
-//            ScrollView {
-//                VStack(spacing: 20) {
-//
-//                    // Calories card
-//                    VStack(spacing: 8) {
-//                        Text("Calories Today")
-//                            .font(.headline)
-//                            .foregroundStyle(.secondary)
-//
-//                        Text("1,280 / 2,000")
-//                            .font(.system(size: 36, weight: .bold))
-//
-//                        ProgressView(value: 1280, total: 2000)
-//                            .tint(.green)
-//                    }
-//                    .padding()
-//                    .frame(maxWidth: .infinity)
-//                    .background(.green.opacity(0.1))
-//                    .clipShape(RoundedRectangle(cornerRadius: 16))
-//
-//                    // Macros row
-//                    HStack(spacing: 12) {
-//                        MacroCard(title: "Protein", value: "100g", color: .blue)
-//                        MacroCard(title: "Carbs", value: "140g", color: .orange)
-//                        MacroCard(title: "Fat", value: "45g", color: .red)
-//                    }
-//
-//                    // Workout summary card
-//                    VStack(alignment: .leading, spacing: 8) {
-//                        Text("Today's Workout")
-//                            .font(.headline)
-//                        Text("Push Day — 60 min")
-//                            .font(.subheadline)
-//                            .foregroundStyle(.secondary)
-//                    }
-//                    .padding()
-//                    .frame(maxWidth: .infinity, alignment: .leading)
-//                    .background(.purple.opacity(0.1))
-//                    .clipShape(RoundedRectangle(cornerRadius: 16))
-//
-//                }
-//                .padding()
-//            }
-//            .navigationTitle("Dashboard")
-//        }
-//    }
-//}
-//
-//// Small reusable card for each macro
-//struct MacroCard: View {
-//    let title: String
-//    let value: String
-//    let color: Color
-//
-//    var body: some View {
-//        VStack(spacing: 6) {
-//            Text(title)
-//                .font(.caption)
-//                .foregroundStyle(.secondary)
-//            Text(value)
-//                .font(.title3)
-//                .fontWeight(.semibold)
-//                .foregroundStyle(color)
-//        }
-//        .frame(maxWidth: .infinity)
-//        .padding()
-//        .background(color.opacity(0.1))
-//        .clipShape(RoundedRectangle(cornerRadius: 12))
-//    }
-//}
-//
-//#Preview {
-//    DashboardView()
-//}
 //
 //  DashboardView.swift
 //  FitTrack
@@ -85,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import HealthKit
 import Combine
 import CoreMotion
@@ -112,7 +34,6 @@ class StepCounterService: ObservableObject {
     }
 
     func requestAndStart() {
-        // Request HealthKit permission
         guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount),
               let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning),
               let caloriesType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return }
@@ -129,26 +50,19 @@ class StepCounterService: ObservableObject {
             }
         }
 
-        // Request Core Motion permission — this creates the
-        // Motion & Fitness toggle in iPhone Settings
         if CMMotionActivityManager.isActivityAvailable() {
             let activityManager = CMMotionActivityManager()
             activityManager.startActivityUpdates(to: .main) { _ in }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 activityManager.stopActivityUpdates()
                 self.isMotionAuthorized = true
-                // Start live pedometer after motion permission granted
                 self.startPedometerUpdates()
             }
         }
     }
 
-    // MARK: - Live pedometer via CoreMotion
-    // This runs in real time — updates every step
-
     private func startPedometerUpdates() {
         guard CMPedometer.isStepCountingAvailable() else { return }
-
         let startOfDay = Calendar.current.startOfDay(for: Date())
         pedometer.startUpdates(from: startOfDay) { [weak self] data, error in
             guard let data = data, error == nil else { return }
@@ -158,8 +72,6 @@ class StepCounterService: ObservableObject {
             }
         }
     }
-
-    // MARK: - HealthKit observers for calories
 
     private func startHealthKitObservers() {
         startObserver(for: .activeEnergyBurned) { self.fetchActiveCalories() }
@@ -177,11 +89,7 @@ class StepCounterService: ObservableObject {
         observerQueries.append(query)
     }
 
-    // MARK: - Fetch functions
-
     func fetchTodayData() {
-        // Steps and distance come from CoreMotion pedometer live
-        // Only need to fetch calories from HealthKit
         fetchActiveCalories()
     }
 
@@ -217,13 +125,16 @@ class StepCounterService: ObservableObject {
 
 struct DashboardView: View {
     @Environment(FoodStore.self) var foodStore
+    @Environment(ProfileStore.self) var profileStore
     @StateObject private var stepService = StepCounterService()
+    @State private var showingProfile = false
 
-    let stepGoal = 10000
-    let calorieGoal = 2000
     let proteinGoal = 150
     let carbsGoal = 200
     let fatGoal = 65
+
+    var calorieGoal: Int { profileStore.calorieGoal }
+    var stepGoal: Int { profileStore.stepGoal }
 
     var calorieProgress: Double {
         min(Double(foodStore.totalCalories) / Double(calorieGoal), 1.0)
@@ -261,7 +172,7 @@ struct DashboardView: View {
                             Text(greeting)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Text("Here's your day")
+                            Text(profileStore.name.isEmpty ? "Here's your day" : "Hey, \(profileStore.name.split(separator: " ").first.map(String.init) ?? profileStore.name) 👋")
                                 .font(.title2)
                                 .fontWeight(.semibold)
                         }
@@ -429,12 +340,24 @@ struct DashboardView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
+                        showingProfile = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .foregroundStyle(.purple)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
                         stepService.fetchTodayData()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .foregroundStyle(.purple)
                     }
                 }
+            }
+            .sheet(isPresented: $showingProfile) {
+                ProfileView()
+                    .environment(profileStore)
             }
         }
     }
@@ -550,6 +473,9 @@ struct QuickStat: View {
 }
 
 #Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: FoodEntry.self, configurations: config)
     DashboardView()
-        .environment(FoodStore())
+        .modelContainer(container)
+        .environment(FoodStore(modelContext: container.mainContext))
 }

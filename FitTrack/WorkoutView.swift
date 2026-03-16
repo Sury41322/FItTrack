@@ -7,11 +7,11 @@
 
 import SwiftUI
 import Combine
-
+import SwiftData
 // MARK: - Main Workout View
 
 struct WorkoutView: View {
-    @State private var store = WorkoutStore()
+    @Environment(WorkoutStore.self) private var store
     @State private var selectedDayIndex: Int = 0
     @State private var showingSplitEditor = false
     @State private var showingStartWorkout = false
@@ -20,7 +20,18 @@ struct WorkoutView: View {
 
     var currentDayIndex: Int {
         let weekday = Calendar.current.component(.weekday, from: Date())
-        return (weekday + 5) % 7
+        // weekday: 1=Sun, 2=Mon, 3=Tue, 4=Wed, 5=Thu, 6=Fri, 7=Sat
+        // dayOrder: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+        switch weekday {
+        case 1: return 6 // Sun
+        case 2: return 0 // Mon
+        case 3: return 1 // Tue
+        case 4: return 2 // Wed
+        case 5: return 3 // Thu
+        case 6: return 4 // Fri
+        case 7: return 5 // Sat
+        default: return 0
+        }
     }
 
     var body: some View {
@@ -53,107 +64,162 @@ struct WorkoutView: View {
                     }
 
                     // Today card
-                    let todayPlan = store.splitDays[currentDayIndex]
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Today — \(todayPlan.day)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(todayPlan.isRestDay ? "Rest Day" : (todayPlan.workoutName.isEmpty ? "No workout planned" : todayPlan.workoutName))
-                                    .font(.headline)
-                            }
-                            Spacer()
-                            if !todayPlan.isRestDay && store.activeSession == nil {
-                                Button {
-                                    selectedDayIndex = currentDayIndex
-                                    showingStartWorkout = true
-                                } label: {
-                                    Text("Start")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 7)
-                                        .background(.purple)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                }
-                            }
+                    let days = store.splitDays
+                    if currentDayIndex < days.count {
+                        let todayPlan = days[currentDayIndex]
+                        let todaySession = store.completedSessions.first {
+                            Calendar.current.isDateInToday($0.date)
                         }
-                        if !todayPlan.isRestDay && !todayPlan.exercises.isEmpty {
-                            ForEach(todayPlan.exercises.prefix(3)) { ex in
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(.purple.opacity(0.3))
-                                        .frame(width: 6, height: 6)
-                                    Text(ex.name)
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Today — \(todayPlan.day)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
-                                    Text("· \(ex.targetSets)×\(ex.targetReps)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary.opacity(0.7))
+                                    if let session = todaySession {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.green)
+                                                .font(.subheadline)
+                                            Text("\(session.name) completed")
+                                                .font(.headline)
+                                                .foregroundStyle(.green)
+                                        }
+                                    } else {
+                                        Text(todayPlan.isRestDay ? "Rest Day" : (todayPlan.workoutName.isEmpty ? "No workout planned" : todayPlan.workoutName))
+                                            .font(.headline)
+                                    }
+                                }
+                                Spacer()
+                                if !todayPlan.isRestDay && store.activeSession == nil && todaySession == nil {
+                                    Button {
+                                        selectedDayIndex = currentDayIndex
+                                        showingStartWorkout = true
+                                    } label: {
+                                        Text("Start")
+                                           .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 7)
+                                            .background(.purple)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
                                 }
                             }
-                            if todayPlan.exercises.count > 3 {
-                                Text("+ \(todayPlan.exercises.count - 3) more exercises")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            if !todayPlan.isRestDay && !todayPlan.exercises.isEmpty {
+                                ForEach(todayPlan.exercises.prefix(3)) { ex in
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(.purple.opacity(0.3))
+                                            .frame(width: 6, height: 6)
+                                        Text(ex.name)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Text("· \(ex.targetSets)×\(ex.targetReps)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary.opacity(0.7))
+                                    }
+                                }
+                                if todayPlan.exercises.count > 3 {
+                                    Text("+ \(todayPlan.exercises.count - 3) more exercises")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
+                        .padding()
+                        .background(.purple.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
                     }
-                    .padding()
-                    .background(.purple.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
 
                     // Weekly split
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("Weekly Split")
-                                .font(.headline)
+                            Text("Weekly Split").font(.headline)
                             Spacer()
                             Button {
                                 showingSplitEditor = true
                             } label: {
-                                Text("Edit")
-                                    .font(.caption)
-                                    .foregroundStyle(.purple)
+                                Text("Edit").font(.caption).foregroundStyle(.purple)
                             }
                         }
+
+                        // Day strip
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(store.splitDays.indices, id: \.self) { i in
                                     let day = store.splitDays[i]
                                     Button {
                                         selectedDayIndex = i
-                                        showingSplitEditor = true
                                     } label: {
                                         VStack(spacing: 6) {
                                             Text(String(day.day.prefix(3)))
-                                                .font(.caption)
-                                                .fontWeight(.semibold)
+                                                .font(.caption).fontWeight(.semibold)
                                             if day.isRestDay {
                                                 Image(systemName: "moon.fill")
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.orange)
+                                                    .font(.caption2).foregroundStyle(.orange)
                                             } else {
                                                 Text("\(day.exercises.count)")
-                                                    .font(.caption2)
-                                                    .fontWeight(.bold)
-                                                    .foregroundStyle(.purple)
+                                                    .font(.caption2).fontWeight(.bold).foregroundStyle(.purple)
                                             }
                                         }
                                         .frame(width: 52, height: 52)
-                                        .background(i == currentDayIndex ? .purple.opacity(0.15) : .gray.opacity(0.07))
+                                        .background(i == selectedDayIndex ? .purple.opacity(0.15) : .gray.opacity(0.07))
                                         .clipShape(RoundedRectangle(cornerRadius: 10))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 10)
-                                                .stroke(i == currentDayIndex ? Color.purple : Color.clear, lineWidth: 1.5)
-                                        )
-                                        .foregroundStyle(i == currentDayIndex ? .purple : .secondary)
+                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(i == selectedDayIndex ? Color.purple : Color.clear, lineWidth: 1.5))
+                                        .foregroundStyle(i == selectedDayIndex ? .purple : .secondary)
                                     }
                                 }
                             }
                         }
+
+                        // Selected day plan
+                        let selectedDay = store.splitDays[selectedDayIndex]
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(selectedDay.day).font(.subheadline).fontWeight(.semibold)
+                                    Text(selectedDay.isRestDay ? "Rest Day" : (selectedDay.workoutName.isEmpty ? "No workout planned" : selectedDay.workoutName))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button {
+                                    showingSplitEditor = true
+                                } label: {
+                                    Text("Edit plan")
+                                        .font(.caption)
+                                        .foregroundStyle(.purple)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(.purple.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
+
+                            if selectedDay.isRestDay {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "moon.fill").foregroundStyle(.orange)
+                                    Text("Rest & recover").font(.caption).foregroundStyle(.secondary)
+                                }
+                            } else if selectedDay.exercises.isEmpty {
+                                Text("No exercises added yet — tap Edit plan to set up this day.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                ForEach(selectedDay.exercises) { ex in
+                                    HStack(spacing: 8) {
+                                        Circle().fill(.purple.opacity(0.3)).frame(width: 6, height: 6)
+                                        Text(ex.name).font(.caption).foregroundStyle(.primary)
+                                        Spacer()
+                                        Text("\(ex.targetSets)×\(ex.targetReps)")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(.purple.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .padding()
                     .background(.gray.opacity(0.07))
@@ -167,7 +233,7 @@ struct WorkoutView: View {
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
                             Divider().padding(.horizontal, 16)
-                            ForEach(Array(store.personalBests.values)
+                            ForEach(store.personalBests
                                 .sorted { $0.date > $1.date }
                                 .prefix(5)) { pb in
                                 HStack {
@@ -245,16 +311,16 @@ struct WorkoutView: View {
             }
             .navigationTitle("Workout")
             .sheet(isPresented: $showingSplitEditor) {
-                SplitEditorView(store: $store, selectedDayIndex: selectedDayIndex)
+                SplitEditorView(store: store, selectedDayIndex: selectedDayIndex)
             }
             .sheet(isPresented: $showingStartWorkout) {
-                StartWorkoutSheet(store: $store, dayIndex: selectedDayIndex) {
+                StartWorkoutSheet(store: store, dayIndex: selectedDayIndex) {
                     showingStartWorkout = false
                     showingActiveWorkout = true
                 }
             }
             .fullScreenCover(isPresented: $showingActiveWorkout) {
-                ActiveWorkoutView(store: $store, isPresented: $showingActiveWorkout)
+                ActiveWorkoutView(store: store, isPresented: $showingActiveWorkout)
             }
             .sheet(item: $selectedSession) { session in
                 SessionDetailView(session: session, store: store)
@@ -266,14 +332,16 @@ struct WorkoutView: View {
 // MARK: - Split Editor
 
 struct SplitEditorView: View {
-    @Binding var store: WorkoutStore
+    let store: WorkoutStore
     @State var selectedDayIndex: Int
     @State private var showingAddExercise = false
+    @State private var showingCopyPlan = false
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Day picker
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(store.splitDays.indices, id: \.self) { i in
@@ -294,65 +362,94 @@ struct SplitEditorView: View {
                     .padding()
                 }
                 Divider()
-                ScrollView {
-                    VStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Workout name")
-                                .font(.caption).foregroundStyle(.secondary)
-                            TextField("e.g. Push A – Chest + Triceps", text: Binding(
-                                get: { store.splitDays[selectedDayIndex].workoutName },
-                                set: { store.splitDays[selectedDayIndex].workoutName = $0 }
+
+                if selectedDayIndex < store.splitDays.count {
+                    let day = store.splitDays[selectedDayIndex]
+                    ScrollView {
+                        VStack(spacing: 12) {
+
+                            // Workout name
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Workout name")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                TextField("e.g. Push A – Chest + Triceps", text: Binding(
+                                    get: { day.workoutName },
+                                    set: { day.workoutName = $0; store.saveSplitDay(day) }
+                                ))
+                                .textFieldStyle(.roundedBorder)
+                            }
+
+                            // Rest day toggle
+                            Toggle("Rest day", isOn: Binding(
+                                get: { day.isRestDay },
+                                set: { day.isRestDay = $0; store.saveSplitDay(day) }
                             ))
-                            .textFieldStyle(.roundedBorder)
-                        }
+                            .tint(.purple)
 
-                        Toggle("Rest day", isOn: Binding(
-                            get: { store.splitDays[selectedDayIndex].isRestDay },
-                            set: { store.splitDays[selectedDayIndex].isRestDay = $0 }
-                        ))
-                        .tint(.purple)
+                            if !day.isRestDay {
 
-                        let day = store.splitDays[selectedDayIndex]
-                        if !day.isRestDay {
-                            ForEach(day.exercises.indices, id: \.self) { i in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(day.exercises[i].name)
-                                            .font(.subheadline).fontWeight(.medium)
-                                        Text("\(day.exercises[i].targetSets) sets × \(day.exercises[i].targetReps) reps")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
+                                // Copy plan button
+                                if store.splitDays.filter({ !$0.isRestDay && !$0.exercises.isEmpty }).count > 0 {
                                     Button {
-                                        store.splitDays[selectedDayIndex].exercises.remove(at: i)
+                                        showingCopyPlan = true
                                     } label: {
-                                        Image(systemName: "trash")
-                                            .font(.caption)
-                                            .foregroundStyle(.red.opacity(0.7))
+                                        HStack {
+                                            Image(systemName: "doc.on.doc")
+                                            Text("Copy plan from another day")
+                                        }
+                                        .font(.subheadline)
+                                        .foregroundStyle(.blue)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(.blue.opacity(0.08))
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
                                     }
                                 }
-                                .padding()
-                                .background(.gray.opacity(0.07))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                            }
 
-                            Button {
-                                showingAddExercise = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: "plus.circle.fill")
-                                    Text("Add exercise")
+                                // Exercise list with drag to reorder
+                                if !day.exercises.isEmpty {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        ForEach(day.exercises) { exercise in
+                                            HStack {
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text(exercise.name).font(.subheadline).fontWeight(.medium)
+                                                    Text("\(exercise.targetSets) sets × \(exercise.targetReps) reps")
+                                                        .font(.caption).foregroundStyle(.secondary)
+                                                }
+                                                Spacer()
+                                                Button {
+                                                    day.exercises.removeAll { $0.id == exercise.id }
+                                                    store.saveSplitDay(day)
+                                                } label: {
+                                                    Image(systemName: "trash").font(.caption).foregroundStyle(.red.opacity(0.7))
+                                                }
+                                            }
+                                            .padding()
+                                            .background(.gray.opacity(0.07))
+                                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                                        }
+                                    }
                                 }
-                                .font(.subheadline)
-                                .foregroundStyle(.purple)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(.purple.opacity(0.08))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                                // Add exercise button
+                                Button {
+                                    showingAddExercise = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "plus.circle.fill")
+                                        Text("Add exercise")
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundStyle(.purple)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(.purple.opacity(0.08))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
                             }
                         }
+                        .padding()
                     }
-                    .padding()
                 }
             }
             .navigationTitle("Edit Split")
@@ -366,8 +463,86 @@ struct SplitEditorView: View {
             }
             .sheet(isPresented: $showingAddExercise) {
                 AddSplitExerciseSheet { exercise in
-                    store.splitDays[selectedDayIndex].exercises.append(exercise)
+                    if selectedDayIndex < store.splitDays.count {
+                        let day = store.splitDays[selectedDayIndex]
+                        day.exercises.append(exercise)
+                        store.saveSplitDay(day)
+                    }
                     showingAddExercise = false
+                }
+            }
+            .sheet(isPresented: $showingCopyPlan) {
+                CopyPlanSheet(
+                    store: store,
+                    currentDayIndex: selectedDayIndex
+                ) { sourceDayIndex in
+                    let source = store.splitDays[sourceDayIndex]
+                    let target = store.splitDays[selectedDayIndex]
+                    // Copy exercises from source to target
+                    let copied = source.exercises.map {
+                        SplitExercise(name: $0.name, targetSets: $0.targetSets, targetReps: $0.targetReps)
+                    }
+                    target.exercises.append(contentsOf: copied)
+                    if target.workoutName.isEmpty {
+                        target.workoutName = source.workoutName
+                    }
+                    store.saveSplitDay(target)
+                    showingCopyPlan = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Copy Plan Sheet
+
+struct CopyPlanSheet: View {
+    let store: WorkoutStore
+    let currentDayIndex: Int
+    let onCopy: (Int) -> Void
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(store.splitDays.indices, id: \.self) { i in
+                    let day = store.splitDays[i]
+                    // Skip current day and empty/rest days
+                    if i != currentDayIndex && !day.isRestDay && !day.exercises.isEmpty {
+                        Button {
+                            onCopy(i)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(day.day)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Text("\(day.exercises.count) exercises")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if !day.workoutName.isEmpty {
+                                    Text(day.workoutName)
+                                        .font(.caption)
+                                        .foregroundStyle(.purple)
+                                }
+                                Text(day.exercises.prefix(3).map { $0.name }.joined(separator: ", ") + (day.exercises.count > 3 ? "..." : ""))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Copy From")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(.red)
                 }
             }
         }
@@ -439,13 +614,16 @@ struct AddSplitExerciseSheet: View {
 // MARK: - Start Workout Sheet
 
 struct StartWorkoutSheet: View {
-    @Binding var store: WorkoutStore
+    let store: WorkoutStore
     let dayIndex: Int
     let onStart: () -> Void
     @State private var workoutName = ""
     @Environment(\.dismiss) var dismiss
 
-    var dayPlan: SplitDay { store.splitDays[dayIndex] }
+    var dayPlan: SplitDay? {
+        guard dayIndex < store.splitDays.count else { return nil }
+        return store.splitDays[dayIndex]
+    }
 
     var body: some View {
         NavigationStack {
@@ -457,13 +635,13 @@ struct StartWorkoutSheet: View {
                         TextField("e.g. Push A – Chest + Triceps", text: $workoutName)
                             .textFieldStyle(.roundedBorder)
                     }
-                    .onAppear { workoutName = dayPlan.workoutName }
+                    .onAppear { workoutName = dayPlan?.workoutName ?? "" }
 
-                    if !dayPlan.exercises.isEmpty {
+                    if let exercises = dayPlan?.exercises, !exercises.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Exercises from split")
                                 .font(.caption).foregroundStyle(.secondary)
-                            ForEach(dayPlan.exercises) { ex in
+                            ForEach(exercises) { ex in
                                 HStack {
                                     Text(ex.name).font(.subheadline)
                                     Spacer()
@@ -479,10 +657,10 @@ struct StartWorkoutSheet: View {
                     }
 
                     Button {
-                        if dayPlan.exercises.isEmpty {
-                            store.startEmptySession(name: workoutName)
+                        if let plan = dayPlan, !plan.exercises.isEmpty {
+                            store.startSession(name: workoutName, exercises: plan.exercises)
                         } else {
-                            store.startSession(name: workoutName, exercises: dayPlan.exercises)
+                            store.startEmptySession(name: workoutName)
                         }
                         dismiss()
                         onStart()
@@ -515,7 +693,7 @@ struct StartWorkoutSheet: View {
 // MARK: - Active Workout
 
 struct ActiveWorkoutView: View {
-    @Binding var store: WorkoutStore
+    let store: WorkoutStore
     @Binding var isPresented: Bool
     @State private var showingAddExercise = false
     @State private var showingFinishConfirm = false
@@ -592,7 +770,7 @@ struct ActiveWorkoutView: View {
                         if let session = store.activeSession {
                             ForEach(session.exercises.indices, id: \.self) { exIndex in
                                 ExerciseLogCard(
-                                    store: $store,
+                                    store: store,
                                     exerciseIndex: exIndex,
                                     onSetCompleted: {
                                         startRestTimer()
@@ -643,7 +821,6 @@ struct ActiveWorkoutView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
 
-                        // Keyboard spacer
                         Color.clear.frame(height: 350)
                     }
                     .padding()
@@ -717,7 +894,7 @@ struct ActiveWorkoutView: View {
 // MARK: - Exercise Log Card
 
 struct ExerciseLogCard: View {
-    @Binding var store: WorkoutStore
+    let store: WorkoutStore
     let exerciseIndex: Int
     let onSetCompleted: () -> Void
     let onFocused: () -> Void
@@ -756,7 +933,6 @@ struct ExerciseLogCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                // Last session reference
                 let lastSets = store.lastSets(for: exercise?.name ?? "")
                 if !lastSets.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -876,25 +1052,15 @@ struct ExerciseLogCard: View {
     func addSet() {
         guard let weight = Double(weightInput),
               let reps = Int(repsInput),
-              store.activeSession != nil else { return }
+              let session = store.activeSession else { return }
 
-        let newSet = LoggedSet(
-            weight: weight,
-            reps: reps,
-            isWarmup: isWarmup,
-            completed: true
-        )
-
-        var exercises = store.activeSession!.exercises
-        exercises[exerciseIndex].sets.append(newSet)
-        store.activeSession!.exercises = exercises
+        let newSet = LoggedSet(weight: weight, reps: reps, isWarmup: isWarmup, completed: true)
+        session.exercises[exerciseIndex].sets.append(newSet)
 
         weightInput = ""
         repsInput = ""
 
-        if !isWarmup {
-            onSetCompleted()
-        }
+        if !isWarmup { onSetCompleted() }
         isWarmup = false
     }
 }
@@ -911,7 +1077,6 @@ struct SessionDetailView: View {
             ScrollView {
                 VStack(spacing: 16) {
 
-                    // Summary bar
                     HStack(spacing: 0) {
                         StatBox(value: store.formatDuration(session.durationSeconds), label: "Duration")
                         Divider().frame(height: 40)
@@ -928,26 +1093,20 @@ struct SessionDetailView: View {
                     .background(.purple.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
 
-                    // Each exercise
                     ForEach(session.exercises) { exercise in
                         VStack(alignment: .leading, spacing: 0) {
-
-                            // Exercise header
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text(exercise.name)
-                                        .font(.headline)
+                                    Text(exercise.name).font(.headline)
                                     Spacer()
                                     if let pb = store.pb(for: exercise.name),
                                        let best = exercise.bestSet,
                                        best.weight * Double(best.reps) >= pb.weight * Double(pb.reps) {
                                         HStack(spacing: 4) {
                                             Image(systemName: "trophy.fill")
-                                                .font(.caption2)
-                                                .foregroundStyle(.yellow)
+                                                .font(.caption2).foregroundStyle(.yellow)
                                             Text("New PB!")
-                                                .font(.caption)
-                                                .foregroundStyle(.yellow)
+                                                .font(.caption).foregroundStyle(.yellow)
                                         }
                                     }
                                 }
@@ -970,8 +1129,6 @@ struct SessionDetailView: View {
 
                             if !exercise.sets.isEmpty {
                                 Divider().padding(.horizontal, 16)
-
-                                // Column headers
                                 HStack {
                                     Text("Set").font(.caption).foregroundStyle(.secondary).frame(width: 30)
                                     Text("Weight").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
@@ -1025,14 +1182,10 @@ struct SessionDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                     }
 
-                    // Notes
                     if !session.notes.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Notes")
-                                .font(.headline)
-                            Text(session.notes)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                            Text("Notes").font(.headline)
+                            Text(session.notes).font(.subheadline).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
@@ -1067,18 +1220,20 @@ struct StatBox: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.purple)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            Text(value).font(.subheadline).fontWeight(.semibold).foregroundStyle(.purple)
+            Text(label).font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
 }
 
 #Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(
+        for: WorkoutSession.self, SplitDay.self, PersonalBest.self,
+        configurations: config
+    )
     WorkoutView()
+        .modelContainer(container)
+        .environment(WorkoutStore(modelContext: container.mainContext))
 }

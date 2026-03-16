@@ -6,50 +6,53 @@
 //
 
 import SwiftUI
+import SwiftData
 import Observation
 
-// Single source of truth for all food data
 @Observable
 class FoodStore {
-    var loggedFoods: [FoodEntry] = []
+    private var modelContext: ModelContext
 
-    // Filter by meal
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+
+    // MARK: - All foods (today only)
+
+    var loggedFoods: [FoodEntry] {
+        let descriptor = FetchDescriptor<FoodEntry>(
+            sortBy: [SortDescriptor(\.date)]
+        )
+        let all = (try? modelContext.fetch(descriptor)) ?? []
+        return all.filter { Calendar.current.isDateInToday($0.date) }
+    }
+
+    // MARK: - Filter by meal
+
     func foods(for meal: String) -> [FoodEntry] {
         loggedFoods.filter { $0.meal == meal }
     }
 
-    // Calories for a meal
     func calories(for meal: String) -> Int {
         foods(for: meal).reduce(0) { $0 + $1.calories }
     }
 
-    // Total calories
-    var totalCalories: Int {
-        loggedFoods.reduce(0) { $0 + $1.calories }
-    }
+    // MARK: - Totals
 
-    // Total protein
-    var totalProtein: Int {
-        loggedFoods.reduce(0) { $0 + $1.protein }
-    }
+    var totalCalories: Int { loggedFoods.reduce(0) { $0 + $1.calories } }
+    var totalProtein: Int  { loggedFoods.reduce(0) { $0 + $1.protein } }
+    var totalCarbs: Int    { loggedFoods.reduce(0) { $0 + $1.carbs } }
+    var totalFat: Int      { loggedFoods.reduce(0) { $0 + $1.fat } }
 
-    // Total carbs
-    var totalCarbs: Int {
-        loggedFoods.reduce(0) { $0 + $1.carbs }
-    }
+    // MARK: - Mutations
 
-    // Total fat
-    var totalFat: Int {
-        loggedFoods.reduce(0) { $0 + $1.fat }
-    }
-
-    // Add food
     func addFood(_ entry: FoodEntry) {
-        loggedFoods.append(entry)
+        modelContext.insert(entry)
+        try? modelContext.save()
     }
 
-    // Delete food
     func deleteFood(_ entry: FoodEntry) {
-        loggedFoods.removeAll { $0.id == entry.id }
+        modelContext.delete(entry)
+        try? modelContext.save()
     }
 }

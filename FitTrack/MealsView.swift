@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct MealsView: View {
     @Environment(FoodStore.self) var foodStore
@@ -122,7 +123,6 @@ struct MealsView: View {
     }
 }
 
-// Meal section with + button per meal
 struct MealPlanSection: View {
     let meal: String
     let foods: [FoodEntry]
@@ -132,7 +132,6 @@ struct MealPlanSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
-            // Header with + button per meal
             HStack {
                 Text(meal)
                     .font(.headline)
@@ -194,6 +193,9 @@ struct MealPlanSection: View {
 }
 
 #Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: FoodEntry.self, configurations: config)
     MealsView()
-        .environment(FoodStore())
+        .modelContainer(container)
+        .environment(FoodStore(modelContext: container.mainContext))
 }
