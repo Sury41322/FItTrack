@@ -474,8 +474,12 @@ struct QuickStat: View {
 
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: FoodEntry.self, configurations: config)
+    let container = try! ModelContainer(
+        for: FoodEntry.self, UserProfile.self,
+        configurations: config
+    )
     DashboardView()
         .modelContainer(container)
         .environment(FoodStore(modelContext: container.mainContext))
+        .environment(ProfileStore(modelContext: container.mainContext))
 }
