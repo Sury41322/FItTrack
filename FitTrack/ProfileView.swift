@@ -172,6 +172,9 @@ struct ProfileField: View {
 }
 
 #Preview {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: UserProfile.self, configurations: config)
     ProfileView()
-        .environment(ProfileStore(modelContext: try! ModelContainer(for: UserProfile.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true)).mainContext))
+        .modelContainer(container)
+        .environment(ProfileStore(modelContext: container.mainContext))
 }
