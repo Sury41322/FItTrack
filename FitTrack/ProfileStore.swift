@@ -38,4 +38,5 @@ class ProfileStore {
     var calorieGoal: Int { profile.calorieGoal }
     var stepGoal: Int { profile.stepGoal }
     var name: String { profile.name }
+    var heightCm: Double { profile.heightCm }
 }

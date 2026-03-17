@@ -14,6 +14,7 @@ struct ProfileView: View {
 
     @State private var name = ""
     @State private var age = ""
+    @State private var height = ""
     @State private var weight = ""
     @State private var calorieGoal = ""
     @State private var stepGoal = ""
@@ -59,6 +60,7 @@ struct ProfileView: View {
 
                         ProfileField(icon: "person.fill", label: "Name", placeholder: "Your name", text: $name, keyboardType: .default)
                         ProfileField(icon: "calendar", label: "Age", placeholder: "25", text: $age, keyboardType: .numberPad)
+                        ProfileField(icon: "ruler.fill", label: "Height (cm)", placeholder: "170", text: $height, keyboardType: .decimalPad)
                         ProfileField(icon: "scalemass.fill", label: "Weight (kg)", placeholder: "70", text: $weight, keyboardType: .decimalPad)
                     }
 
@@ -118,6 +120,7 @@ struct ProfileView: View {
         let p = profileStore.profile
         name = p.name
         age = p.age > 0 ? "\(p.age)" : ""
+        height = p.heightCm > 0 ? String(format: "%g", p.heightCm) : ""
         weight = p.weightKg > 0 ? String(format: "%g", p.weightKg) : ""
         calorieGoal = "\(p.calorieGoal)"
         stepGoal = "\(p.stepGoal)"
@@ -127,6 +130,7 @@ struct ProfileView: View {
         let p = profileStore.profile
         p.name = name
         p.age = Int(age) ?? p.age
+        p.heightCm = Double(height) ?? p.heightCm
         p.weightKg = Double(weight) ?? p.weightKg
         p.calorieGoal = Int(calorieGoal) ?? p.calorieGoal
         p.stepGoal = Int(stepGoal) ?? p.stepGoal
