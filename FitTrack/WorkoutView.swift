@@ -8,6 +8,7 @@
 import SwiftUI
 import Combine
 import SwiftData
+import AudioToolbox
 
 // MARK: - Main Workout View
 
@@ -52,10 +53,6 @@ struct WorkoutView: View {
             .sorted { $0.date > $1.date }
     }
 
-    /// Sessions for selected day:
-    /// - Rest day → empty
-    /// - Named workout → match by name
-    /// - No name → show all sessions
     var daySessions: [WorkoutSession] {
         guard let day = selectedDay, !day.isRestDay else { return [] }
         if !day.workoutName.isEmpty {
@@ -650,7 +647,6 @@ struct ActiveWorkoutView: View {
     @State private var showingAddExercise = false
     @State private var showingFinishConfirm = false
     @State private var showingCancelConfirm = false
-    @State private var elapsedSeconds = 0
     @State private var restTimerSeconds = 0
     @State private var restTimerRunning = false
     @State private var selectedRestTime = 90
@@ -662,7 +658,8 @@ struct ActiveWorkoutView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 16) {
-                        timerRow.id("top")
+                        // Rest timer row — only shown while rest timer is active
+                        if restTimerRunning { restTimerRow }
 
                         if let session = store.activeSession {
                             ForEach(session.exercises.indices, id: \.self) { i in
@@ -682,6 +679,18 @@ struct ActiveWorkoutView: View {
                                 )
                                 .id("exercise_\(i)")
                             }
+                        }
+
+                        // Rest timer trigger — always visible, lets user start manually too
+                        Menu {
+                            ForEach(restOptions, id: \.self) { sec in
+                                Button("\(sec)s rest") { selectedRestTime = sec; startRestTimer() }
+                            }
+                        } label: {
+                            Label("Start rest timer", systemImage: "timer")
+                                .font(.subheadline).foregroundStyle(.orange)
+                                .frame(maxWidth: .infinity).padding()
+                                .background(.orange.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 12))
                         }
 
                         Button { showingAddExercise = true } label: {
@@ -711,8 +720,17 @@ struct ActiveWorkoutView: View {
                 }
             }
             .onReceive(timer) { _ in
-                elapsedSeconds += 1
-                if restTimerRunning { restTimerSeconds > 0 ? (restTimerSeconds -= 1) : (restTimerRunning = false) }
+                guard restTimerRunning else { return }
+                if restTimerSeconds > 1 {
+                    restTimerSeconds -= 1
+                } else {
+                    // Timer just hit zero — fire all three alerts
+                    restTimerSeconds = 0
+                    restTimerRunning = false
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    AudioServicesPlaySystemSound(1005) // Received message sound
+                    NotificationManager.shared.cancelRestTimer() // already fired via system
+                }
             }
             .alert("Finish Workout?", isPresented: $showingFinishConfirm) {
                 Button("Finish", role: .destructive) { store.finishSession(on: retroactiveDate); isPresented = false }
@@ -733,41 +751,41 @@ struct ActiveWorkoutView: View {
         }
     }
 
-    private var timerRow: some View {
+    // MARK: - Rest Timer Row (shown only when running)
+    private var restTimerRow: some View {
         HStack {
+            Spacer()
             VStack(spacing: 2) {
-                Text(formatTime(elapsedSeconds)).font(.system(size: 28, weight: .bold, design: .monospaced)).foregroundStyle(.purple)
-                Text("elapsed").font(.caption2).foregroundStyle(.secondary)
+                Text(formatTime(restTimerSeconds))
+                    .font(.system(size: 28, weight: .bold, design: .monospaced))
+                    .foregroundStyle(restTimerSeconds <= 10 ? .red : .orange)
+                Text("rest remaining").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            if restTimerRunning {
-                VStack(spacing: 2) {
-                    Text(formatTime(restTimerSeconds))
-                        .font(.system(size: 22, weight: .bold, design: .monospaced))
-                        .foregroundStyle(restTimerSeconds <= 10 ? .red : .orange)
-                    Text("rest").font(.caption2).foregroundStyle(.secondary)
-                }
-                Button { restTimerRunning = false; restTimerSeconds = 0 } label: {
-                    Text("Skip").font(.caption2).foregroundStyle(.secondary)
-                }
-            } else {
-                Menu {
-                    ForEach(restOptions, id: \.self) { sec in
-                        Button("\(sec)s rest") { selectedRestTime = sec; startRestTimer() }
-                    }
-                } label: {
-                    Label("Rest timer", systemImage: "timer").font(.caption).foregroundStyle(.orange)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(.orange.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 8))
-                }
+            Button {
+                restTimerRunning = false
+                restTimerSeconds = 0
+                NotificationManager.shared.cancelRestTimer()
+            } label: {
+                Text("Skip")
+                    .font(.caption).fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.gray.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }
         .padding()
-        .background(.gray.opacity(0.07))
+        .background(.orange.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: restTimerRunning)
     }
 
-    func startRestTimer() { restTimerSeconds = selectedRestTime; restTimerRunning = true }
+    func startRestTimer() {
+        restTimerSeconds = selectedRestTime
+        restTimerRunning = true
+        NotificationManager.shared.scheduleRestTimer(seconds: selectedRestTime)
+    }
     func formatTime(_ s: Int) -> String { String(format: "%d:%02d", s / 60, s % 60) }
 }
 

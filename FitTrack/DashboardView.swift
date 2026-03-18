@@ -155,6 +155,18 @@ struct DashboardView: View {
     var caloriesFromSteps: Int  { Int(Double(stepService.steps) * 0.04) }
     var stepsRemaining: Int     { max(0, stepGoal - stepService.steps) }
 
+    /// Workout weekdays derived from the active split.
+    /// Uses the same index mapping as `currentDayIndex` (Mon=0 → weekday 2, …, Sun=6 → weekday 1).
+    private var workoutWeekdays: Set<Int> {
+        // splitDays is indexed Mon–Sun (0–6); Calendar weekday is Sun=1, Mon=2…Sat=7.
+        let calendarOffset = [2, 3, 4, 5, 6, 7, 1] // splitIndex 0…6 → Calendar weekday
+        return Set(
+            workoutStore.splitDays.enumerated()
+                .filter { !$0.element.isRestDay }
+                .map    {  calendarOffset[$0.offset] }
+        )
+    }
+
     var currentDayIndex: Int {
         switch Calendar.current.component(.weekday, from: .now) {
         case 1: return 6; case 2: return 0; case 3: return 1
@@ -183,6 +195,11 @@ struct DashboardView: View {
                     macrosRow
                     stepsCard
                     weightTrendCard
+
+                    // ── Workout Reminder Banner ──────────────────────────────
+                    WorkoutReminderBannerView(workoutWeekdays: workoutWeekdays)
+                    // ────────────────────────────────────────────────────────
+
                     quickStats
                     if !foodStore.loggedFoods.isEmpty { mealsSection }
                 }
@@ -192,6 +209,11 @@ struct DashboardView: View {
             .onAppear {
                 snapshotToday()
                 backfillAllHistory()
+                // Sync notifications whenever the dashboard appears
+                // (handles split edits made in the Workout tab).
+                Task {
+                    await NotificationManager.shared.reschedule(workoutWeekdays: workoutWeekdays)
+                }
             }
             .onReceive(snapshotTimer) { _ in
                 snapshotToday()
@@ -205,6 +227,12 @@ struct DashboardView: View {
             .onChange(of: stepService.steps)       { _, _ in snapshotToday() }
             .onChange(of: foodStore.totalProtein)  { _, _ in snapshotToday() }
             .onChange(of: foodStore.totalCalories) { _, _ in snapshotToday() }
+            // Re-schedule whenever the split changes mid-session
+            .onChange(of: workoutStore.splitDays) { _, _ in
+                Task {
+                    await NotificationManager.shared.reschedule(workoutWeekdays: workoutWeekdays)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
