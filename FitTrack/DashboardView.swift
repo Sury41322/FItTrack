@@ -140,8 +140,9 @@ struct DashboardView: View {
     @Environment(WorkoutStore.self) var workoutStore
     @StateObject private var stepService = StepCounterService()
     @State private var showingProfile = false
+    @State private var snapshotWorkItem: DispatchWorkItem? = nil
     @Environment(\.scenePhase) private var scenePhase
-    let snapshotTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    let snapshotTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     // TODO: move macro goals to UserProfile
     let proteinGoal = 150
@@ -256,21 +257,28 @@ struct DashboardView: View {
 
     // MARK: - Snapshot
 
+    /// Debounced snapshot — coalesces rapid successive calls into one write.
+    /// Multiple onChange triggers (steps, protein, calories) all funnel here
+    /// but only the last one within 1.5s actually hits SwiftData.
     private func snapshotToday() {
-        let todayWorkout = workoutStore.completedSessions.contains {
-            Calendar.current.isDateInToday($0.date)
+        snapshotWorkItem?.cancel()
+        let item = DispatchWorkItem {
+            let todayWorkout = workoutStore.completedSessions.contains {
+                Calendar.current.isDateInToday($0.date)
+            }
+            let todayIsRest = currentDayIndex < workoutStore.splitDays.count
+                ? workoutStore.splitDays[currentDayIndex].isRestDay
+                : false
+            dayLogStore.snapshotToday(
+                steps:         stepService.steps,
+                calories:      foodStore.totalCalories,
+                protein:       foodStore.totalProtein,
+                workoutLogged: todayWorkout,
+                isRestDay:     todayIsRest
+            )
         }
-        let todayIsRest = currentDayIndex < workoutStore.splitDays.count
-            ? workoutStore.splitDays[currentDayIndex].isRestDay
-            : false
-
-        dayLogStore.snapshotToday(
-            steps:         stepService.steps,
-            calories:      foodStore.totalCalories,
-            protein:       foodStore.totalProtein,
-            workoutLogged: todayWorkout,
-            isRestDay:     todayIsRest
-        )
+        snapshotWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: item)
     }
 
     private func backfillAllHistory() {

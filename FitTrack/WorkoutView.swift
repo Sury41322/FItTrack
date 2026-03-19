@@ -55,12 +55,22 @@ struct WorkoutView: View {
 
     var daySessions: [WorkoutSession] {
         guard let day = selectedDay, !day.isRestDay else { return [] }
+        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: .now)!
+        let sessions = store.completedSessions.filter { $0.date >= cutoff }
         if !day.workoutName.isEmpty {
-            return store.completedSessions.filter {
+            return sessions.filter {
                 $0.name.lowercased() == day.workoutName.lowercased()
             }
         }
-        return store.completedSessions
+        return sessions
+    }
+
+    /// Most recent completed session matching the selected day's workout name.
+    var lastMatchingSession: WorkoutSession? {
+        guard let day = selectedDay, !day.isRestDay, !day.workoutName.isEmpty else { return nil }
+        return store.completedSessions.first {
+            $0.name.lowercased() == day.workoutName.lowercased()
+        }
     }
 
     var body: some View {
@@ -314,7 +324,10 @@ struct WorkoutView: View {
     private var recentSessionsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Recent Sessions").font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recent Sessions").font(.headline)
+                    Text("Last 7 days").font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text(selectedDay?.workoutName.isEmpty == false ? selectedDay!.workoutName : "All sessions")
                     .font(.caption).foregroundStyle(.secondary)
@@ -322,22 +335,31 @@ struct WorkoutView: View {
             .padding(.horizontal, 16).padding(.vertical, 12)
 
             if daySessions.isEmpty {
-                Text("No sessions logged yet.")
+                Text("No sessions in the last 7 days.")
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(.horizontal, 16).padding(.bottom, 12)
             } else {
                 Divider().padding(.horizontal, 16)
-                ForEach(daySessions.prefix(5)) { session in
+                ForEach(daySessions.prefix(7)) { session in
                     Button { selectedSession = session } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(session.name).font(.subheadline).fontWeight(.medium).foregroundStyle(.primary)
-                                Text("\(session.exercises.count) exercises · \(store.formatDuration(session.durationSeconds))")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                HStack(spacing: 8) {
+                                    Text("\(session.exercises.count) exercises")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                    let vol = session.exercises.reduce(0.0) { $0 + $1.totalVolume }
+                                    Text("·").font(.caption).foregroundStyle(.secondary)
+                                    Text(vol >= 1000
+                                         ? String(format: "%.1ft vol", vol / 1000)
+                                         : "\(Int(vol))kg vol")
+                                        .font(.caption).foregroundStyle(.purple)
+                                }
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 4) {
-                                Text(session.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                                Text(session.date.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.caption).foregroundStyle(.secondary)
                                 Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
                             }
                         }
@@ -412,18 +434,40 @@ struct SplitEditorView: View {
 
                                 if !day.exercises.isEmpty {
                                     ForEach(day.exercises) { exercise in
-                                        HStack {
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(exercise.name).font(.subheadline).fontWeight(.medium)
-                                                Text("\(exercise.targetSets) sets × \(exercise.targetReps) reps")
-                                                    .font(.caption).foregroundStyle(.secondary)
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            HStack {
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text(exercise.name).font(.subheadline).fontWeight(.medium)
+                                                    Text("\(exercise.targetSets) sets × \(exercise.targetReps) reps")
+                                                        .font(.caption).foregroundStyle(.secondary)
+                                                }
+                                                Spacer()
+                                                Button {
+                                                    day.exercises.removeAll { $0.id == exercise.id }
+                                                    store.saveSplitDay(day)
+                                                } label: {
+                                                    Image(systemName: "trash").font(.caption).foregroundStyle(.red.opacity(0.7))
+                                                }
                                             }
-                                            Spacer()
-                                            Button {
-                                                day.exercises.removeAll { $0.id == exercise.id }
-                                                store.saveSplitDay(day)
-                                            } label: {
-                                                Image(systemName: "trash").font(.caption).foregroundStyle(.red.opacity(0.7))
+                                            // Rest timer picker
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "timer").font(.caption2).foregroundStyle(.orange)
+                                                Text("Rest:").font(.caption2).foregroundStyle(.secondary)
+                                                ForEach([30, 60, 90, 120, 180], id: \.self) { sec in
+                                                    let selected = exercise.restSeconds == sec
+                                                    Button {
+                                                        exercise.restSeconds = sec
+                                                        store.saveSplitDay(day)
+                                                    } label: {
+                                                        Text(sec >= 60 ? "\(sec/60)m\(sec%60 == 0 ? "" : "\(sec%60)s")" : "\(sec)s")
+                                                            .font(.caption2).fontWeight(selected ? .semibold : .regular)
+                                                            .padding(.horizontal, 8).padding(.vertical, 4)
+                                                            .background(selected ? Color.orange : Color.gray.opacity(0.12))
+                                                            .foregroundStyle(selected ? .white : .secondary)
+                                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
                                             }
                                         }
                                         .padding()
@@ -583,6 +627,14 @@ struct StartWorkoutSheet: View {
         return store.splitDays[dayIndex]
     }
 
+    /// Most recent session matching this day's workout name.
+    var lastSession: WorkoutSession? {
+        guard let name = dayPlan?.workoutName, !name.isEmpty else { return nil }
+        return store.completedSessions.first {
+            $0.name.lowercased() == name.lowercased()
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -592,6 +644,59 @@ struct StartWorkoutSheet: View {
                         TextField("e.g. Push A", text: $workoutName).textFieldStyle(.roundedBorder)
                     }
                     .onAppear { workoutName = dayPlan?.workoutName ?? "" }
+
+                    // ── Repeat last session ──────────────────────────────────
+                    if let last = lastSession {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Last session").font(.caption).foregroundStyle(.secondary)
+                                    Text(last.date.formatted(date: .abbreviated, time: .omitted))
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                let vol = last.exercises.reduce(0.0) { $0 + $1.totalVolume }
+                                Text(vol >= 1000
+                                     ? String(format: "%.1ft total vol", vol / 1000)
+                                     : "\(Int(vol))kg total vol")
+                                    .font(.caption2).foregroundStyle(.purple)
+                            }
+
+                            ForEach(last.exercises) { ex in
+                                HStack {
+                                    Text(ex.name).font(.caption).fontWeight(.medium)
+                                    Spacer()
+                                    let workingSets = ex.sets.filter { !$0.isWarmup }
+                                    if let best = workingSets.max(by: { $0.weight < $1.weight }) {
+                                        Text("\(workingSets.count) sets · top \(String(format: "%g", best.weight))kg×\(best.reps)")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(.gray.opacity(0.06))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+
+                            Button {
+                                // Start session pre-loaded with last session's exercises
+                                let exercises = last.exercises.map {
+                                    SplitExercise(name: $0.name, targetSets: $0.targetSets, targetReps: $0.targetReps)
+                                }
+                                store.startSession(name: workoutName.isEmpty ? last.name : workoutName, exercises: exercises)
+                                dismiss()
+                                onStart()
+                            } label: {
+                                Label("Repeat this session", systemImage: "arrow.clockwise")
+                                    .font(.subheadline).fontWeight(.semibold).foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity).padding()
+                                    .background(.teal).clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                        .padding()
+                        .background(.teal.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    // ────────────────────────────────────────────────────────
 
                     if let exercises = dayPlan?.exercises, !exercises.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -617,7 +722,7 @@ struct StartWorkoutSheet: View {
                         dismiss()
                         onStart()
                     } label: {
-                        Text("Start Workout").font(.headline).foregroundStyle(.white)
+                        Text("Start Fresh").font(.headline).foregroundStyle(.white)
                             .frame(maxWidth: .infinity).padding()
                             .background(workoutName.isEmpty ? .gray : .purple)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -665,15 +770,18 @@ struct ActiveWorkoutView: View {
                             ForEach(session.exercises.indices, id: \.self) { i in
                                 ExerciseLogCard(
                                     store: store, exerciseIndex: i,
-                                    onSetCompleted: {
+                                    onSetCompleted: { restSecs in
+                                        selectedRestTime = restSecs
                                         startRestTimer()
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("input_\(i)", anchor: .bottom) }
+                                        // Scroll after set logged, not on focus — avoids fighting keyboard animation
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                            proxy.scrollTo("input_\(i)", anchor: .bottom)
                                         }
                                     },
                                     onFocused: {
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("input_\(i)", anchor: .bottom) }
+                                        // Delay scroll until keyboard is fully up (0.6s)
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                                            proxy.scrollTo("input_\(i)", anchor: .bottom)
                                         }
                                     }
                                 )
@@ -794,7 +902,7 @@ struct ActiveWorkoutView: View {
 struct ExerciseLogCard: View {
     let store: WorkoutStore
     let exerciseIndex: Int
-    let onSetCompleted: () -> Void
+    let onSetCompleted: (Int) -> Void  // passes restSeconds
     let onFocused: () -> Void
 
     @State private var weightInput = ""
@@ -815,21 +923,40 @@ struct ExerciseLogCard: View {
                         Label("PB: \(pb.display)", systemImage: "trophy.fill").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Text("Target: \(exercise?.targetSets ?? 0) sets × \(exercise?.targetReps ?? "") reps")
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Text("Target: \(exercise?.targetSets ?? 0) sets × \(exercise?.targetReps ?? "") reps")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if let rest = exercise?.restSeconds {
+                        Label(rest >= 60 ? "\(rest/60)m\(rest%60 == 0 ? "" : " \(rest%60)s") rest" : "\(rest)s rest",
+                              systemImage: "timer")
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
+                }
 
                 let lastSets = store.lastSets(for: exercise?.name ?? "").filter { !$0.isWarmup }
                 if !lastSets.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            Text("Last:").font(.caption2).foregroundStyle(.secondary)
-                            ForEach(lastSets) { set in
-                                Text("\(String(format: "%g", set.weight))kg×\(set.reps)")
-                                    .font(.caption2).padding(.horizontal, 6).padding(.vertical, 3)
-                                    .background(.blue.opacity(0.1)).foregroundStyle(.blue)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    VStack(alignment: .leading, spacing: 4) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                Text("Last:").font(.caption2).foregroundStyle(.secondary)
+                                ForEach(lastSets) { set in
+                                    // Tap a previous set to auto-fill weight + reps
+                                    Button {
+                                        weightInput = String(format: "%g", set.weight)
+                                        repsInput   = "\(set.reps)"
+                                    } label: {
+                                        Text("\(String(format: "%g", set.weight))kg×\(set.reps)")
+                                            .font(.caption2).padding(.horizontal, 6).padding(.vertical, 3)
+                                            .background(.blue.opacity(0.1)).foregroundStyle(.blue)
+                                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
+                        Text("Tap a set to fill weight & reps")
+                            .font(.system(size: 9)).foregroundStyle(.secondary.opacity(0.7))
                     }
                 }
             }
@@ -868,13 +995,13 @@ struct ExerciseLogCard: View {
                         Text("Weight (kg)").font(.caption2).foregroundStyle(.secondary)
                         TextField("0", text: $weightInput).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
                             .focused($weightFocused)
-                            .onChange(of: weightFocused) { _, focused in if focused { onFocused() } }
+                            .onTapGesture { onFocused() }
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Reps").font(.caption2).foregroundStyle(.secondary)
                         TextField("0", text: $repsInput).textFieldStyle(.roundedBorder).keyboardType(.numberPad)
                             .focused($repsFocused)
-                            .onChange(of: repsFocused) { _, focused in if focused { onFocused() } }
+                            .onTapGesture { onFocused() }
                     }
                 }
                 HStack {
@@ -900,7 +1027,7 @@ struct ExerciseLogCard: View {
         guard let weight = Double(weightInput), let reps = Int(repsInput), let session = store.activeSession else { return }
         session.exercises[exerciseIndex].sets.append(LoggedSet(weight: weight, reps: reps, isWarmup: isWarmup, completed: true))
         weightInput = ""; repsInput = ""
-        if !isWarmup { onSetCompleted() }
+        if !isWarmup { onSetCompleted(session.exercises[exerciseIndex].restSeconds) }
         isWarmup = false
     }
 }

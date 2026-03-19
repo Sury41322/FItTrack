@@ -99,11 +99,19 @@ struct ProfileView: View {
             .navigationTitle("Profile & Goals")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .keyboard) {
+                    Button("Done") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                        to: nil, from: nil, for: nil)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                         .foregroundStyle(.purple)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .onAppear { loadProfile() }
         }
     }
@@ -127,18 +135,21 @@ struct ProfileView: View {
     }
 
     func saveProfile() {
+        // Dismiss keyboard first so UI feels snappy
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
         let p = profileStore.profile
-        p.name = name
-        p.age = Int(age) ?? p.age
-        p.heightCm = Double(height) ?? p.heightCm
-        p.weightKg = Double(weight) ?? p.weightKg
+        p.name        = name
+        p.age         = Int(age)         ?? p.age
+        p.heightCm    = Double(height)   ?? p.heightCm
+        p.weightKg    = Double(weight)   ?? p.weightKg
         p.calorieGoal = Int(calorieGoal) ?? p.calorieGoal
-        p.stepGoal = Int(stepGoal) ?? p.stepGoal
-        profileStore.save()
-
-        withAnimation {
-            showingSaved = true
+        p.stepGoal    = Int(stepGoal)    ?? p.stepGoal
+        // Defer SwiftData write so keyboard dismiss animation completes first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            profileStore.save()
         }
+        withAnimation { showingSaved = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             withAnimation { showingSaved = false }
         }

@@ -16,7 +16,6 @@ class WorkoutStore {
 
     var activeSession: WorkoutSession? = nil
 
-    // Stored so @Observable can track mutations and trigger UI updates
     var completedSessions: [WorkoutSession] = []
     var personalBests: [PersonalBest] = []
 
@@ -28,8 +27,6 @@ class WorkoutStore {
 
     // MARK: - Refresh
 
-    /// Re-fetch all data from SwiftData into stored properties.
-    /// Call this after any insert/delete to ensure UI updates.
     func refresh() {
         let sessionDesc = FetchDescriptor<WorkoutSession>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
@@ -78,7 +75,13 @@ class WorkoutStore {
     func startSession(name: String, exercises: [SplitExercise]) {
         let session = WorkoutSession(name: name, date: .now)
         session.exercises = exercises.map {
-            ActiveExercise(name: $0.name, targetSets: $0.targetSets, targetReps: $0.targetReps)
+            // Pass restSeconds from the split plan into the active exercise
+            ActiveExercise(
+                name: $0.name,
+                targetSets: $0.targetSets,
+                targetReps: $0.targetReps,
+                restSeconds: $0.restSeconds
+            )
         }
         activeSession = session
     }
@@ -87,7 +90,6 @@ class WorkoutStore {
         activeSession = WorkoutSession(name: name, date: .now)
     }
 
-    /// Finishes the active session. Pass a date to log retroactively (e.g. yesterday).
     func finishSession(on date: Date? = nil) {
         guard let session = activeSession else { return }
 
@@ -126,15 +128,10 @@ class WorkoutStore {
     }
 
     func deleteSession(_ session: WorkoutSession) {
-        // Remove PBs that belong exclusively to this session.
-        // Strategy: for each exercise in the deleted session, check if its
-        // best set matches the stored PB. If so, recalculate from remaining
-        // sessions — if no other session has that exercise, delete the PB entirely.
         for exercise in session.exercises {
             let key = exercise.name.lowercased()
             guard let pb = personalBests.first(where: { $0.exerciseName.lowercased() == key }) else { continue }
 
-            // Find the best set across all OTHER sessions for this exercise
             let otherSessions = completedSessions.filter { $0.id != session.id }
             var bestVolumeElsewhere: Double = 0
             var bestSetElsewhere: (weight: Double, reps: Int, date: Date)?
@@ -151,12 +148,10 @@ class WorkoutStore {
             }
 
             if let newBest = bestSetElsewhere {
-                // Update PB to the best from remaining sessions
                 pb.weight = newBest.weight
                 pb.reps   = newBest.reps
                 pb.date   = newBest.date
             } else {
-                // No other session has this exercise — delete the PB entirely
                 modelContext.delete(pb)
             }
         }

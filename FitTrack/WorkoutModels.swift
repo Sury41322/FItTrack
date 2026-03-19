@@ -32,6 +32,7 @@ class ActiveExercise {
     var name: String
     var targetSets: Int
     var targetReps: String
+    var restSeconds: Int               // per-exercise rest timer duration
     @Relationship(deleteRule: .cascade) var sets: [LoggedSet] = []
 
     var bestSet: LoggedSet? {
@@ -44,10 +45,11 @@ class ActiveExercise {
             .reduce(0) { $0 + ($1.weight * Double($1.reps)) }
     }
 
-    init(name: String, targetSets: Int, targetReps: String) {
+    init(name: String, targetSets: Int, targetReps: String, restSeconds: Int = 90) {
         self.name = name
         self.targetSets = targetSets
         self.targetReps = targetReps
+        self.restSeconds = restSeconds
     }
 }
 
@@ -99,11 +101,13 @@ class SplitExercise {
     var name: String
     var targetSets: Int
     var targetReps: String
+    var restSeconds: Int               // per-exercise rest timer duration
 
-    init(name: String, targetSets: Int = 3, targetReps: String = "8-12") {
+    init(name: String, targetSets: Int = 3, targetReps: String = "8-12", restSeconds: Int = 90) {
         self.name = name
         self.targetSets = targetSets
         self.targetReps = targetReps
+        self.restSeconds = restSeconds
     }
 }
 
