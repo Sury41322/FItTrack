@@ -2,8 +2,6 @@
 //  FoodEntry.swift
 //  FitTrack
 //
-//  Created by Surya Sushad on 16/03/26.
-//
 
 import Foundation
 import SwiftData
@@ -17,8 +15,20 @@ class FoodEntry {
     var fat: Int
     var meal: String
     var date: Date
+    var portionGrams: Double
+    var portionUnit: String
 
-    init(name: String, calories: Int, protein: Int, carbs: Int, fat: Int, meal: String, date: Date = .now) {
+    init(
+        name: String,
+        calories: Int,
+        protein: Int,
+        carbs: Int,
+        fat: Int,
+        meal: String,
+        date: Date = .now,
+        portionGrams: Double = 100,
+        portionUnit: String = "g"
+    ) {
         self.name = name
         self.calories = calories
         self.protein = protein
@@ -26,5 +36,7 @@ class FoodEntry {
         self.fat = fat
         self.meal = meal
         self.date = date
+        self.portionGrams = portionGrams
+        self.portionUnit = portionUnit
     }
 }

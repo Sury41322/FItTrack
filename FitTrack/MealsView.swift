@@ -95,33 +95,35 @@ struct MealsView: View {
     func mealIcon(_ meal: String) -> String {
         switch meal {
         case "Breakfast": return "sunrise.fill"
-        case "Lunch": return "sun.max.fill"
-        case "Dinner": return "moon.stars.fill"
-        case "Snack": return "leaf.fill"
-        default: return "fork.knife"
+        case "Lunch":     return "sun.max.fill"
+        case "Dinner":    return "moon.stars.fill"
+        case "Snack":     return "leaf.fill"
+        default:          return "fork.knife"
         }
     }
 
     func mealIconColor(_ meal: String) -> Color {
         switch meal {
         case "Breakfast": return .orange
-        case "Lunch": return .yellow
-        case "Dinner": return .indigo
-        case "Snack": return .green
-        default: return .gray
+        case "Lunch":     return .yellow
+        case "Dinner":    return .indigo
+        case "Snack":     return .green
+        default:          return .gray
         }
     }
 
     func mealColor(_ meal: String) -> Color {
         switch meal {
         case "Breakfast": return .orange
-        case "Lunch": return .yellow
-        case "Dinner": return .indigo
-        case "Snack": return .green
-        default: return .gray
+        case "Lunch":     return .yellow
+        case "Dinner":    return .indigo
+        case "Snack":     return .green
+        default:          return .gray
         }
     }
 }
+
+// MARK: - MealPlanSection
 
 struct MealPlanSection: View {
     let meal: String
@@ -161,10 +163,16 @@ struct MealPlanSection: View {
                             Text(food.name)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
+
+                            // Portion display
+                            Text(formatPortion(food.portionGrams, food.portionUnit))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+
                             HStack(spacing: 10) {
                                 MiniMacro(value: food.protein, label: "P", color: .blue)
-                                MiniMacro(value: food.carbs, label: "C", color: .orange)
-                                MiniMacro(value: food.fat, label: "F", color: .red)
+                                MiniMacro(value: food.carbs,   label: "C", color: .orange)
+                                MiniMacro(value: food.fat,     label: "F", color: .red)
                             }
                         }
                         Spacer()
@@ -190,7 +198,42 @@ struct MealPlanSection: View {
         .background(.gray.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
+
+    /// Formats stored portionGrams back into a human-readable portion string
+    private func formatPortion(_ grams: Double, _ unit: String) -> String {
+        if unit == "g" || unit == "ml" {
+            return "\(Int(grams))\(unit)"
+        }
+        let unitEnum = PortionUnit(rawValue: unit) ?? .grams
+        let amount = grams / unitEnum.gramsEquivalent
+        let formatted = amount.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(amount))"
+            : String(format: "%.1f", amount)
+        return "\(formatted) \(unit)"
+    }
 }
+
+// MARK: - MiniMacro
+
+struct MiniMacro: View {
+    let value: Int
+    let label: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
+            Text("\(value)g")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Preview
 
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
