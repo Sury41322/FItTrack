@@ -20,7 +20,7 @@ struct NutritionView: View {
             ScrollView {
                 VStack(spacing: 16) {
 
-                    // Total calories banner
+                    // MARK: - Totals Banner
                     VStack(spacing: 4) {
                         Text("Total Calories Today")
                             .font(.subheadline)
@@ -41,14 +41,16 @@ struct NutritionView: View {
                     .background(.green.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
 
-                    // Meal sections
+                    // MARK: - Meal Sections
                     ForEach(meals, id: \.self) { meal in
-                        MealSectionView(
+                        NutritionMealSection(
                             meal: meal,
                             foods: foodStore.foods(for: meal),
-                            totalCalories: foodStore.calories(for: meal),
-                            onDelete: { food in
-                                foodStore.deleteFood(food)
+                            meals: meals,
+                            onDelete: { food in foodStore.deleteFood(food) },
+                            onAdd: {
+                                selectedMeal = meal
+                                showingAddFood = true
                             }
                         )
                     }
@@ -81,13 +83,17 @@ struct NutritionView: View {
     }
 }
 
-// MARK: - MealSectionView
+// MARK: - NutritionMealSection
 
-struct MealSectionView: View {
+struct NutritionMealSection: View {
     let meal: String
     let foods: [FoodEntry]
-    let totalCalories: Int
+    let meals: [String]
     let onDelete: (FoodEntry) -> Void
+    let onAdd: () -> Void
+
+    @Environment(FoodStore.self) var foodStore
+    @State private var foodToEdit: FoodEntry?
 
     var mealIcon: String {
         switch meal {
@@ -109,8 +115,14 @@ struct MealSectionView: View {
         }
     }
 
+    var totalCalories: Int {
+        foods.reduce(0) { $0 + $1.calories }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+
+            // Section header
             HStack {
                 Image(systemName: mealIcon)
                     .foregroundStyle(mealColor)
@@ -128,65 +140,80 @@ struct MealSectionView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Button { onAdd() } label: {
+                    Image(systemName: "plus.circle")
+                        .foregroundStyle(.green)
+                        .padding(.leading, 8)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
-            if !foods.isEmpty {
-                Divider().padding(.horizontal, 16)
-                ForEach(foods) { food in
-                    HStack(alignment: .center) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(food.name)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-
-                            // Portion display
-                            Text(formatPortion(food.portionGrams, food.portionUnit))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-
-                            HStack(spacing: 10) {
-                                MiniMacro(value: food.protein, label: "P", color: .blue)
-                                MiniMacro(value: food.carbs,   label: "C", color: .orange)
-                                MiniMacro(value: food.fat,     label: "F", color: .red)
-                            }
-                        }
-                        Spacer()
-                        Text("\(food.calories)")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("kcal")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button {
-                            onDelete(food)
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.caption)
-                                .foregroundStyle(.red.opacity(0.7))
-                        }
-                        .padding(.leading, 8)
-                    }
+            if foods.isEmpty {
+                Text("Nothing added yet")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    Divider().padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+            } else {
+                // ✅ List for native swipe actions
+                List {
+                    ForEach(foods) { food in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(food.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Text(formatPortion(food.portionGrams, food.portionUnit))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                HStack(spacing: 10) {
+                                    MiniMacro(value: food.protein, label: "P", color: .blue)
+                                    MiniMacro(value: food.carbs,   label: "C", color: .orange)
+                                    MiniMacro(value: food.fat,     label: "F", color: .red)
+                                }
+                            }
+                            Spacer()
+                            Text("\(food.calories) kcal")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.green)
+                        }
+                        .listRowBackground(Color.gray.opacity(0.07))
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                onDelete(food)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button {
+                                foodToEdit = food
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.green)
+                        }
+                    }
                 }
+                .listStyle(.plain)
+                .scrollDisabled(true)
+                .frame(height: CGFloat(foods.count) * 80)
             }
         }
         .background(.gray.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .sheet(item: $foodToEdit) { food in
+            EditFoodSheet(food: food, meals: meals)
+                .environment(foodStore)
+        }
     }
 
     private func formatPortion(_ grams: Double, _ unit: String) -> String {
-        if unit == "g" || unit == "ml" {
-            return "\(Int(grams))\(unit)"
-        }
+        if unit == "g" || unit == "ml" { return "\(Int(grams))\(unit)" }
         let unitEnum = PortionUnit(rawValue: unit) ?? .grams
         let amount = grams / unitEnum.gramsEquivalent
         let formatted = amount.truncatingRemainder(dividingBy: 1) == 0
-            ? "\(Int(amount))"
-            : String(format: "%.1f", amount)
+            ? "\(Int(amount))" : String(format: "%.1f", amount)
         return "\(formatted) \(unit)"
     }
 }

@@ -14,6 +14,7 @@ import AudioToolbox
 
 struct WorkoutView: View {
     @Environment(WorkoutStore.self) private var store
+    @Environment(ProfileStore.self) private var profileStore  // ✅
     @State private var selectedDayIndex: Int = 0
     @State private var showingSplitEditor = false
     @State private var showingStartWorkout = false
@@ -36,10 +37,15 @@ struct WorkoutView: View {
 
     var yesterdayIndex: Int { currentDayIndex == 0 ? 6 : currentDayIndex - 1 }
 
+    // ✅ Rest day = SplitDay flag OR profileStore rest days
+    func isRestDay(_ day: SplitDay) -> Bool {
+        day.isRestDay || profileStore.profile.restDays.contains(day.day)
+    }
+
     var isMissedDay: Bool {
         guard yesterdayIndex < store.splitDays.count else { return false }
         let day = store.splitDays[yesterdayIndex]
-        guard !day.isRestDay && !day.workoutName.isEmpty else { return false }
+        guard !isRestDay(day) && !day.workoutName.isEmpty else { return false }
         return !store.hasSession(on: store.yesterday)
     }
 
@@ -54,20 +60,17 @@ struct WorkoutView: View {
     }
 
     var daySessions: [WorkoutSession] {
-        guard let day = selectedDay, !day.isRestDay else { return [] }
+        guard let day = selectedDay, !isRestDay(day) else { return [] }
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: .now)!
         let sessions = store.completedSessions.filter { $0.date >= cutoff }
         if !day.workoutName.isEmpty {
-            return sessions.filter {
-                $0.name.lowercased() == day.workoutName.lowercased()
-            }
+            return sessions.filter { $0.name.lowercased() == day.workoutName.lowercased() }
         }
         return sessions
     }
 
-    /// Most recent completed session matching the selected day's workout name.
     var lastMatchingSession: WorkoutSession? {
-        guard let day = selectedDay, !day.isRestDay, !day.workoutName.isEmpty else { return nil }
+        guard let day = selectedDay, !isRestDay(day), !day.workoutName.isEmpty else { return nil }
         return store.completedSessions.first {
             $0.name.lowercased() == day.workoutName.lowercased()
         }
@@ -81,7 +84,7 @@ struct WorkoutView: View {
                     todayCard
                     weeklySplitCard
                     if !dayPBs.isEmpty { personalBestsCard }
-                    if !(selectedDay?.isRestDay ?? false) { recentSessionsCard }
+                    if let day = selectedDay, !isRestDay(day) { recentSessionsCard }
                 }
                 .padding()
             }
@@ -131,6 +134,7 @@ struct WorkoutView: View {
             if currentDayIndex < days.count {
                 let todayPlan    = days[currentDayIndex]
                 let todaySession = store.completedSessions.first { Calendar.current.isDateInToday($0.date) }
+                let todayIsRest  = isRestDay(todayPlan)
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -139,13 +143,13 @@ struct WorkoutView: View {
                                 Label("\(session.name) completed", systemImage: "checkmark.circle.fill")
                                     .font(.headline).foregroundStyle(.green)
                             } else {
-                                Text(todayPlan.isRestDay ? "Rest Day" :
+                                Text(todayIsRest ? "Rest Day 🌙" :
                                     todayPlan.workoutName.isEmpty ? "No workout planned" :
                                     todayPlan.workoutName).font(.headline)
                             }
                         }
                         Spacer()
-                        if !todayPlan.isRestDay && store.activeSession == nil && todaySession == nil {
+                        if !todayIsRest && store.activeSession == nil && todaySession == nil {
                             Button {
                                 selectedDayIndex = currentDayIndex
                                 showingStartWorkout = true
@@ -156,7 +160,7 @@ struct WorkoutView: View {
                             }
                         }
                     }
-                    if !todayPlan.isRestDay && !todayPlan.exercises.isEmpty {
+                    if !todayIsRest && !todayPlan.exercises.isEmpty {
                         ForEach(todayPlan.exercises.prefix(3)) { ex in
                             HStack(spacing: 6) {
                                 Circle().fill(.purple.opacity(0.3)).frame(width: 6, height: 6)
@@ -195,6 +199,7 @@ struct WorkoutView: View {
                         let isSelected = i == selectedDayIndex
                         let isToday    = i == currentDayIndex
                         let isMissed   = i == yesterdayIndex && isMissedDay
+                        let dayIsRest  = isRestDay(day)
                         Button { selectedDayIndex = i } label: {
                             VStack(spacing: 4) {
                                 ZStack(alignment: .topTrailing) {
@@ -203,7 +208,7 @@ struct WorkoutView: View {
                                         Circle().fill(.red).frame(width: 7, height: 7).offset(x: 6, y: -4)
                                     }
                                 }
-                                if day.isRestDay {
+                                if dayIsRest {
                                     Image(systemName: "moon.fill").font(.caption2).foregroundStyle(.orange)
                                 } else {
                                     Text("\(day.exercises.count)").font(.caption2).fontWeight(.bold).foregroundStyle(.purple)
@@ -221,6 +226,7 @@ struct WorkoutView: View {
             }
 
             if let day = selectedDay {
+                let dayIsRest = isRestDay(day)
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -231,16 +237,23 @@ struct WorkoutView: View {
                                         .padding(.horizontal, 6).padding(.vertical, 2)
                                         .background(.red).clipShape(Capsule())
                                 }
+                                if !day.isRestDay && profileStore.profile.restDays.contains(day.day) {
+                                    Text("Rest Day").font(.caption2).fontWeight(.semibold).foregroundStyle(.white)
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(.orange).clipShape(Capsule())
+                                }
                             }
-                            Text(day.isRestDay ? "Rest Day" :
+                            Text(dayIsRest ? "Rest Day" :
                                 day.workoutName.isEmpty ? "No workout planned" :
                                 day.workoutName).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button { showingSplitEditor = true } label: {
-                            Text("Edit plan").font(.caption).foregroundStyle(.purple)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(.purple.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 8))
+                        if !dayIsRest {
+                            Button { showingSplitEditor = true } label: {
+                                Text("Edit plan").font(.caption).foregroundStyle(.purple)
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(.purple.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
                         }
                     }
 
@@ -263,7 +276,7 @@ struct WorkoutView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
 
-                    if day.isRestDay {
+                    if dayIsRest {
                         Label("Rest & recover", systemImage: "moon.fill").font(.caption).foregroundStyle(.secondary)
                     } else if day.exercises.isEmpty {
                         Text("No exercises added yet — tap Edit plan to set up this day.").font(.caption).foregroundStyle(.secondary)
@@ -346,8 +359,7 @@ struct WorkoutView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(session.name).font(.subheadline).fontWeight(.medium).foregroundStyle(.primary)
                                 HStack(spacing: 8) {
-                                    Text("\(session.exercises.count) exercises")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                    Text("\(session.exercises.count) exercises").font(.caption).foregroundStyle(.secondary)
                                     let vol = session.exercises.reduce(0.0) { $0 + $1.totalVolume }
                                     Text("·").font(.caption).foregroundStyle(.secondary)
                                     Text(vol >= 1000
@@ -449,7 +461,6 @@ struct SplitEditorView: View {
                                                     Image(systemName: "trash").font(.caption).foregroundStyle(.red.opacity(0.7))
                                                 }
                                             }
-                                            // Rest timer picker
                                             HStack(spacing: 6) {
                                                 Image(systemName: "timer").font(.caption2).foregroundStyle(.orange)
                                                 Text("Rest:").font(.caption2).foregroundStyle(.secondary)
@@ -627,7 +638,6 @@ struct StartWorkoutSheet: View {
         return store.splitDays[dayIndex]
     }
 
-    /// Most recent session matching this day's workout name.
     var lastSession: WorkoutSession? {
         guard let name = dayPlan?.workoutName, !name.isEmpty else { return nil }
         return store.completedSessions.first {
@@ -645,7 +655,6 @@ struct StartWorkoutSheet: View {
                     }
                     .onAppear { workoutName = dayPlan?.workoutName ?? "" }
 
-                    // ── Repeat last session ──────────────────────────────────
                     if let last = lastSession {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
@@ -678,7 +687,6 @@ struct StartWorkoutSheet: View {
                             }
 
                             Button {
-                                // Start session pre-loaded with last session's exercises
                                 let exercises = last.exercises.map {
                                     SplitExercise(name: $0.name, targetSets: $0.targetSets, targetReps: $0.targetReps)
                                 }
@@ -696,7 +704,6 @@ struct StartWorkoutSheet: View {
                         .background(.teal.opacity(0.06))
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
-                    // ────────────────────────────────────────────────────────
 
                     if let exercises = dayPlan?.exercises, !exercises.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -763,7 +770,6 @@ struct ActiveWorkoutView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 16) {
-                        // Rest timer row — only shown while rest timer is active
                         if restTimerRunning { restTimerRow }
 
                         if let session = store.activeSession {
@@ -773,13 +779,11 @@ struct ActiveWorkoutView: View {
                                     onSetCompleted: { restSecs in
                                         selectedRestTime = restSecs
                                         startRestTimer()
-                                        // Scroll after set logged, not on focus — avoids fighting keyboard animation
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                             proxy.scrollTo("input_\(i)", anchor: .bottom)
                                         }
                                     },
                                     onFocused: {
-                                        // Delay scroll until keyboard is fully up (0.6s)
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                                             proxy.scrollTo("input_\(i)", anchor: .bottom)
                                         }
@@ -789,7 +793,6 @@ struct ActiveWorkoutView: View {
                             }
                         }
 
-                        // Rest timer trigger — always visible, lets user start manually too
                         Menu {
                             ForEach(restOptions, id: \.self) { sec in
                                 Button("\(sec)s rest") { selectedRestTime = sec; startRestTimer() }
@@ -832,12 +835,11 @@ struct ActiveWorkoutView: View {
                 if restTimerSeconds > 1 {
                     restTimerSeconds -= 1
                 } else {
-                    // Timer just hit zero — fire all three alerts
                     restTimerSeconds = 0
                     restTimerRunning = false
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    AudioServicesPlaySystemSound(1005) // Received message sound
-                    NotificationManager.shared.cancelRestTimer() // already fired via system
+                    AudioServicesPlaySystemSound(1005)
+                    NotificationManager.shared.cancelRestTimer()
                 }
             }
             .alert("Finish Workout?", isPresented: $showingFinishConfirm) {
@@ -859,7 +861,6 @@ struct ActiveWorkoutView: View {
         }
     }
 
-    // MARK: - Rest Timer Row (shown only when running)
     private var restTimerRow: some View {
         HStack {
             Spacer()
@@ -902,7 +903,7 @@ struct ActiveWorkoutView: View {
 struct ExerciseLogCard: View {
     let store: WorkoutStore
     let exerciseIndex: Int
-    let onSetCompleted: (Int) -> Void  // passes restSeconds
+    let onSetCompleted: (Int) -> Void
     let onFocused: () -> Void
 
     @State private var weightInput = ""
@@ -941,7 +942,6 @@ struct ExerciseLogCard: View {
                             HStack(spacing: 6) {
                                 Text("Last:").font(.caption2).foregroundStyle(.secondary)
                                 ForEach(lastSets) { set in
-                                    // Tap a previous set to auto-fill weight + reps
                                     Button {
                                         weightInput = String(format: "%g", set.weight)
                                         repsInput   = "\(set.reps)"
@@ -1176,13 +1176,16 @@ struct StatBox: View {
     }
 }
 
+// MARK: - Preview
+
 #Preview {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
     let container = try! ModelContainer(
-        for: WorkoutSession.self, SplitDay.self, PersonalBest.self,
+        for: WorkoutSession.self, SplitDay.self, PersonalBest.self, UserProfile.self,
         configurations: config
     )
     WorkoutView()
         .modelContainer(container)
         .environment(WorkoutStore(modelContext: container.mainContext))
+        .environment(ProfileStore(modelContext: container.mainContext))
 }

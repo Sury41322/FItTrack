@@ -12,8 +12,6 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var showWeighIn = false
 
-    // Hold stores as @State so they are created once and reused —
-    // not re-created on every render which caused splitDays to be empty
     @State private var foodStore: FoodStore?
     @State private var workoutStore: WorkoutStore?
     @State private var profileStore: ProfileStore?
@@ -27,28 +25,32 @@ struct ContentView: View {
                let profile = profileStore,
                let weight = weightStore,
                let dayLog = dayLogStore {
-                TabView {
-                    DashboardView()
-                        .tabItem { Label("Dashboard", systemImage: "square.grid.2x2") }
-                    NutritionView()
-                        .tabItem { Label("Nutrition", systemImage: "fork.knife") }
-                    WorkoutView()
-                        .tabItem { Label("Workout", systemImage: "dumbbell") }
-                    MealsView()
-                        .tabItem { Label("Meals", systemImage: "calendar") }
-                }
-                .environment(food)
-                .environment(workout)
-                .environment(profile)
-                .environment(weight)
-                .environment(dayLog)
-                .onAppear {
-                    if !weight.hasLoggedToday { showWeighIn = true }
-                }
-                .fullScreenCover(isPresented: $showWeighIn) {
-                    MorningWeighInView()
-                        .environment(weight)
+
+                if !profile.hasCompletedOnboarding {
+                    OnboardingView()
                         .environment(profile)
+                } else {
+                    TabView {
+                        DashboardView()
+                            .tabItem { Label("Dashboard", systemImage: "square.grid.2x2") }
+                        NutritionView()
+                            .tabItem { Label("Nutrition", systemImage: "fork.knife") }
+                        WorkoutView()
+                            .tabItem { Label("Workout", systemImage: "dumbbell") }
+                    }
+                    .environment(food)
+                    .environment(workout)
+                    .environment(profile)
+                    .environment(weight)
+                    .environment(dayLog)
+                    .onAppear {
+                        if !weight.hasLoggedToday { showWeighIn = true }
+                    }
+                    .fullScreenCover(isPresented: $showWeighIn) {
+                        MorningWeighInView()
+                            .environment(weight)
+                            .environment(profile)
+                    }
                 }
             }
         }

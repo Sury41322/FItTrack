@@ -2,8 +2,6 @@
 //  FoodStore.swift
 //  FitTrack
 //
-//  Created by Surya Sushad on 16/03/26.
-//
 
 import SwiftUI
 import SwiftData
@@ -12,19 +10,21 @@ import Observation
 @Observable
 class FoodStore {
     private var modelContext: ModelContext
+    private(set) var loggedFoods: [FoodEntry] = []
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        refresh()
     }
 
-    // MARK: - All foods (today only)
+    // MARK: - Refresh
 
-    var loggedFoods: [FoodEntry] {
+    func refresh() {
         let descriptor = FetchDescriptor<FoodEntry>(
             sortBy: [SortDescriptor(\.date)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { Calendar.current.isDateInToday($0.date) }
+        loggedFoods = all.filter { Calendar.current.isDateInToday($0.date) }
     }
 
     // MARK: - Filter by meal
@@ -49,10 +49,35 @@ class FoodStore {
     func addFood(_ entry: FoodEntry) {
         modelContext.insert(entry)
         try? modelContext.save()
+        refresh()
     }
 
     func deleteFood(_ entry: FoodEntry) {
         modelContext.delete(entry)
         try? modelContext.save()
+        refresh()
+    }
+
+    func updateFood(
+        _ entry: FoodEntry,
+        name: String,
+        meal: String,
+        portionGrams: Double,
+        portionUnit: String
+    ) {
+        let oldScale = entry.portionGrams / 100.0
+        let newScale = portionGrams / 100.0
+
+        entry.name     = name
+        entry.meal     = meal
+        entry.calories = Int((Double(entry.calories) / oldScale * newScale).rounded())
+        entry.protein  = Int((Double(entry.protein)  / oldScale * newScale).rounded())
+        entry.carbs    = Int((Double(entry.carbs)    / oldScale * newScale).rounded())
+        entry.fat      = Int((Double(entry.fat)      / oldScale * newScale).rounded())
+        entry.portionGrams = portionGrams
+        entry.portionUnit  = portionUnit
+
+        try? modelContext.save()
+        refresh()
     }
 }
